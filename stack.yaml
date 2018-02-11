@@ -2,8 +2,6 @@ resolver: lts-10.4
 
 packages:
   - .
-  - ../pushbullet-hs/pushbullet-types
-  - ../pushbullet-hs/servant-pushbullet-client
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
