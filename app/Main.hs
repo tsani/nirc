@@ -91,7 +91,7 @@ actContext Activity{..} = (actNetwork, actChannel)
 
 -- | The API of the webservice.
 type API
-  = "jake"
+  = "activity"
   :> Capture "network" Network
   :> Capture "channel" Channel
   :> QueryParam "sender" Sender
