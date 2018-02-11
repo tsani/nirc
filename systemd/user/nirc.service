@@ -1,0 +1,9 @@
+[Unit]
+Description=Nirc: an instant message Pushbullet notification bridge
+After=network.target
+
+[Service]
+ExecStart=/home/nirc/.local/bin/nirc-exe
+
+[Install]
+WantedBy=default.target
