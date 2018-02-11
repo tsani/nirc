@@ -1,0 +1,58 @@
+name:                nirc
+version:             0.1.0.0
+github:              "tsani/nirc"
+license:             BSD3
+author:              "Jacob Thomas Errington"
+maintainer:          "nirc@mail.jerrington.me"
+copyright:           "2018 Jacob Thomas Errington"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on Github at <https://github.com/tsani/nirc#readme>
+
+ghc-options:
+  -Wall
+
+default-extensions:
+  - OverloadedStrings
+  - LambdaCase
+  - GeneralizedNewtypeDeriving
+  - DataKinds
+  - RecordWildCards
+  - TypeOperators
+  - NamedFieldPuns
+
+executables:
+  nirc-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - async
+    - base >= 4.7 && < 5
+    - containers
+    - http-client
+    - http-client-tls
+    - servant
+    - servant-server >=0.11
+    - servant-client
+    - warp
+    - wai
+    - bytestring
+    - text
+    - wai-extra
+    - pushbullet-types >=0.4.0.2
+    - servant-pushbullet-client >=0.5.0.0
+    - http-api-data
