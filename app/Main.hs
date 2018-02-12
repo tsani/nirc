@@ -124,11 +124,9 @@ data ServerEnv
 
 -- | The webservice.
 server :: ServerEnv -> Server API
-server ServerEnv{..} = activity where
+server ServerEnv{sendEvent} = activity where
   activity :: Activity -> Handler ()
-  activity a = liftIO $ do
-    putStrLn "Got message!"
-    sendEvent (ActivityDetected a)
+  activity = liftIO . sendEvent . ActivityDetected
 
 ----- CLIENT -----
 -- The client thread's entry point is the 'http' function. This thread
