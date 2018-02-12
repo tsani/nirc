@@ -29,14 +29,26 @@ Pushbullet API key.
 
 Only one endpoint is exposed:
 
-  * `POST /activity/:network/:channel?sender=:sender&message=:message`
+  * `POST /activity`
+
+It accepts a form-urlencoded body with four fields:
+
+  * `actSender`: the person who sent the message
+  * `actChannel`: the context of the message (channel name or sender name for
+    private messages)
+  * `actNetwork`: the network the message was sent on
+  * `actMessage`: the message contents
 
 To configure this with `znc-push`:
 
 ```
 /znc *push service url
-/znc *push message_uri http://example.com/activity/{network}/{context}?sender={nick}&message={message}
+/znc *push message_uri_post yes
+/znc *push message_uri http://example.com/activity?actNetwork={network}&actChannel={context}?actSender={nick}&actMessage={message}
 ```
+
+Although we configure the parameters as query-string parameters, znc-push sends
+everything in the request body as well when POST is enabled.
 
 Configure other `znc-push` settings as you normally would.
 
