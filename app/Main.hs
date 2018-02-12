@@ -120,7 +120,6 @@ server ServerEnv{..} = activity where
   activity a = liftIO $ do
     putStrLn "Got message!"
     sendEvent (ActivityDetected a)
-  activity _ = liftIO $ putStrLn "uh-oh"
 
 ----- CLIENT -----
 -- The client thread's entry point is the 'http' function. This thread
