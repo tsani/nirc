@@ -30,6 +30,9 @@ default-extensions:
   - RecordWildCards
   - TypeOperators
   - NamedFieldPuns
+  - DeriveAnyClass
+  - DerivingStrategies
+  - DeriveGeneric
 
 executables:
   nirc-exe:

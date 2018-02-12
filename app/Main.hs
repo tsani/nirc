@@ -1,3 +1,5 @@
+module Main where
+
 import Control.Concurrent ( threadDelay )
 import Control.Concurrent.Async
 import Control.Concurrent.Chan
@@ -5,40 +7,45 @@ import Control.Monad.IO.Class ( liftIO )
 import Data.Text ( Text )
 import Data.List.NonEmpty ((<|),  NonEmpty )
 import Data.Monoid ( (<>) )
-import qualified Data.Text as T
 import Data.Proxy
+import qualified Data.Text as T
 import qualified Data.Map as M
+import GHC.Generics
 import Network.HTTP.Client.TLS ( newTlsManager )
 import Network.Wai.Handler.Warp ( run )
 import Network.Wai.Middleware.RequestLogger ( logStdoutDev )
 import Network.Pushbullet.Api
 import Network.Pushbullet.Client
 import Network.Pushbullet.Types
-import Web.HttpApiData
 import Servant.API
 import Servant.Server
 import Servant.Client
 import System.Environment ( getEnv )
 import System.Exit ( exitFailure, exitSuccess )
+import Web.HttpApiData
+import Web.FormUrlEncoded
 
 ----- COMMON -----
 ------------------
 
 newtype Network
   = Network Text
-  deriving (FromHttpApiData, Eq, Ord)
+  deriving stock (Eq, Ord)
+  deriving newtype FromHttpApiData
+
 
 newtype Channel
   = Channel Text
-  deriving (FromHttpApiData, Eq, Ord)
+  deriving stock (Eq, Ord)
+  deriving newtype FromHttpApiData
 
 newtype Sender
   = Sender Text
-  deriving FromHttpApiData
+  deriving newtype FromHttpApiData
 
 newtype Message
   = Message Text
-  deriving FromHttpApiData
+  deriving newtype FromHttpApiData
 
 -- | A map that associates each context with the last notification
 -- sent to the user regarding that context.
@@ -81,6 +88,8 @@ data Activity
     , actNetwork :: Network
     , actMessage :: Message
     }
+  deriving (FromForm, Generic)
+
 
 -- | Computes the context in which a given IRC activity occurred.
 actContext :: Activity -> Ctx
@@ -92,10 +101,7 @@ actContext Activity{..} = (actNetwork, actChannel)
 -- | The API of the webservice.
 type API
   = "activity"
-  :> Capture "network" Network
-  :> Capture "channel" Channel
-  :> QueryParam "sender" Sender
-  :> QueryParam "message" Message
+  :> ReqBody '[FormUrlEncoded] Activity
   :> Post '[JSON] ()
 
 api :: Proxy API
@@ -110,16 +116,11 @@ data ServerEnv
 -- | The webservice.
 server :: ServerEnv -> Server API
 server ServerEnv{..} = activity where
-  activity :: Network -> Channel -> Maybe Sender -> Maybe Message -> Handler ()
-  activity n c (Just s) (Just m) = liftIO $ do
+  activity :: Activity -> Handler ()
+  activity a = liftIO $ do
     putStrLn "Got message!"
-    sendEvent $ ActivityDetected Activity
-      { actNetwork = n
-      , actChannel = c
-      , actSender = s
-      , actMessage = m
-      }
-  activity _ _ _ _ = liftIO $ putStrLn "uh-oh"
+    sendEvent (ActivityDetected a)
+  activity _ = liftIO $ putStrLn "uh-oh"
 
 ----- CLIENT -----
 -- The client thread's entry point is the 'http' function. This thread
