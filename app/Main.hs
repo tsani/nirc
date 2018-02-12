@@ -5,6 +5,7 @@ import Control.Concurrent.Async
 import Control.Concurrent.Chan
 import Control.Monad.IO.Class ( liftIO )
 import Data.Text ( Text )
+import qualified Data.List.NonEmpty as N
 import Data.List.NonEmpty ((<|),  NonEmpty )
 import Data.Monoid ( (<>) )
 import Data.Proxy
@@ -27,6 +28,9 @@ import Web.FormUrlEncoded
 
 ----- COMMON -----
 ------------------
+
+recentsCount :: Int
+recentsCount = 4
 
 newtype Network
   = Network Text
@@ -71,7 +75,13 @@ formatNotifyData ctx NotifyData{..} =
   where
     formatContext (Network n, Channel c) = c <> "@" <> n
     -- fold over the activity entries; they are stored most-recent first
-    formatActivity = foldr f T.empty where
+    formatActivity :: NonEmpty Activity -> Text
+    formatActivity as = formatMessages recents <> formatOthers olds where
+      (recents, olds) = splitAt recentsCount (N.toList as)
+    formatOthers l
+      | null l = ""
+      | otherwise = "(and " <> T.pack (show (length l)) <> " other messages)"
+    formatMessages = foldr f T.empty where
       f Activity{..} t = s <> ": " <> msg <> "\n" <> t where
         (Sender s) = actSender
         (Message msg) = actMessage
