@@ -23,7 +23,6 @@ import Servant.Server
 import Servant.Client
 import System.Environment ( getEnv )
 import System.Exit ( exitFailure, exitSuccess )
-import Web.HttpApiData
 import Web.FormUrlEncoded
 
 ----- COMMON -----
