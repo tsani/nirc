@@ -4,6 +4,7 @@ import Control.Concurrent ( threadDelay )
 import Control.Concurrent.Async
 import Control.Concurrent.Chan
 import Control.Monad.IO.Class ( liftIO )
+import Data.Coerce ( coerce )
 import Data.Text ( Text )
 import qualified Data.List.NonEmpty as N
 import Data.List.NonEmpty ((<|),  NonEmpty )
@@ -50,9 +51,45 @@ newtype Message
   = Message Text
   deriving newtype FromHttpApiData
 
+class Boolean a where
+  top :: a
+  (&&&) :: a -> a -> a
+  (|||) :: a -> a -> a
+  bot :: a
+
+anyBoolean :: Boolean a => [a] -> a
+anyBoolean [] = bot
+anyBoolean (x:xs) = x ||| anyBoolean xs
+
+allBoolean :: Boolean a => [a] -> a
+allBoolean [] = top
+allBoolean (x:xs) = x &&& allBoolean xs
+
+-- | A highlighter decides whether an activity counts as a highlight.
+newtype Highlighter
+  = Highlighter { highlight :: Activity -> Bool }
+
+-- | A highlighter that checks whether the given string appears as a
+-- substring of the message body.
+hlBodySubstring :: Text -> Highlighter
+hlBodySubstring t = Highlighter $ \Activity{..} ->
+  let (Message msg) = actMessage in
+    t `T.isInfixOf` msg
+
+-- | Finite boolean algebras.
+instance Boolean Highlighter where
+  top = Highlighter (const True)
+  bot = Highlighter (const False)
+  Highlighter f &&& Highlighter g = Highlighter $ \x -> f x && g x
+  Highlighter f ||| Highlighter g = Highlighter $ \x -> f x || g x
+
 -- | A map that associates each context with the last notification
 -- sent to the user regarding that context.
-type NotifyMap = M.Map Ctx (PushId, NotifyData)
+type NotifyMap = M.Map Ctx PushNotification
+
+-- | A push notification is the ID of the push we sent and the
+-- information contained inside it.
+type PushNotification = (PushId, NotifyData)
 
 -- | An IRC context in a place in which chatting can take place.
 -- Such a place is uniquely identified by the network and channel in
@@ -65,8 +102,28 @@ data NotifyData
     { notActivity :: NonEmpty Activity
     }
 
-formatNotifyData :: Ctx -> NotifyData -> Push 'New
-formatNotifyData ctx NotifyData{..} =
+type NotifyDataFormatter = NotifyData -> Push 'New
+
+formatHighlightActivity :: NotifyDataFormatter
+formatHighlightActivity NotifyData{..} =
+  simpleNewPush ToAll NotePush
+    { pushTitle = Just "Highlights"
+    , pushBody = formatBody notActivity
+    }
+  where
+    formatBody = foldr f T.empty where
+      f Activity{..} t = n <> chan <> s <> ": " <> msg <> "\n" <> t where
+        n = net <> ": "
+        -- only show the channel when it's not a private message
+        chan = if c == s then "" else c <> ": "
+
+        (Sender s) = actSender
+        (Channel c) = actChannel
+        (Message msg) = actMessage
+        (Network net) = actNetwork
+
+formatRegularActivity :: Ctx -> NotifyDataFormatter
+formatRegularActivity ctx NotifyData{..} =
   simpleNewPush ToAll NotePush
     { pushTitle = Just (formatContext ctx)
     , pushBody = formatActivity notActivity
@@ -141,48 +198,58 @@ data HttpEnv
     , auth :: Auth
     , pushMap :: NotifyMap
     , clientEnv :: ClientEnv
+    , hlPush :: Maybe PushNotification
+    , hl :: Highlighter
     }
+
+-- | Prepends the given 'Activity' to the given 'NotifyData' if the
+-- associated 'PushId' has not yet been dismissed. In doing so, the
+-- exiting push is deleted.
+adjustPush :: NotifyData -> Activity -> PushId -> HttpEnv -> IO NotifyData
+adjustPush NotifyData{..} a p e@HttpEnv{..} = do
+  let newNot = NotifyData { notActivity = pure a }
+  pushDismissed <$> runClient e (getPush auth p) >>= \case
+    True -> pure newNot
+    False -> do
+      runClient e (deletePush auth p)
+      pure NotifyData { notActivity = a <| notActivity }
+
+runClient :: HttpEnv -> ClientM a -> IO a
+runClient HttpEnv{..} = retryingDelay timeoutDelay . flip runClientM clientEnv
 
 -- | An infinite loop that services requests sent through the 'Chan'
 -- inside the 'HttpEnv'.
 http :: HttpEnv -> IO a
 http e@HttpEnv{..} = do
-  pushMap' <- recvEvent >>= \case
+  f <- recvEvent >>= \case
     ActivityDetected a -> do
-      putStrLn "detected activity"
-      -- delete the existing push, if any, and construct/update the
-      -- NotifyData
       let ctx = actContext a
       let newNot = NotifyData { notActivity = pure a }
-      d <- case M.lookup ctx pushMap of
-        Just (p, NotifyData{..}) -> do
-          putStrLn "got existing push"
-          -- first, check whether the existing push has been dismissed
-          -- by the user
-          pushDismissed <$> runClient (getPush auth p) >>= \case
-            -- if it has, then we cook up a new notification
-            True -> pure newNot
-            -- if it hasn't, then we delete it, and update the
-            -- existing notification
-            False -> do
-              runClient (deletePush auth p)
-              pure NotifyData { notActivity = a <| notActivity }
-        Nothing -> do
-          putStrLn "no existing push"
-          pure newNot
+      let pm i d = M.insert ctx (i, d) pushMap
+      -- decide whether the activity is a highlight, or whether it
+      -- appears in the pushmap
+      (p, f) <- case (highlight hl a, M.lookup ctx pushMap) of
+        (True, _) -> do
+          n' <- case hlPush of
+            Just (hli, hlnd) -> adjustPush hlnd a hli e
+            Nothing -> pure newNot
+          pure (formatHighlightActivity n', \i s -> s { hlPush = Just (i, n') })
+        (_, Just (i, nd)) -> do
+          n' <- adjustPush nd a i e
+          pure (formatRegularActivity ctx n', \j s -> s { pushMap = pm j n'})
+        (_, Nothing) -> do
+          let n' = newNot
+          pure (formatRegularActivity ctx n', \i s -> s { pushMap = pm i n'})
 
       -- create the new push
-      let p = formatNotifyData ctx d
-      p' <- runClient (createPush auth p)
+      p' <- runClient e (createPush auth p)
 
       -- save the new notification data and ID of the new push into
       -- the map
-      pure $ M.insert ctx (pushId p', d) pushMap
+      pure (f (pushId p'))
 
-  -- recurse with m', which contains any updated state
-  http e {pushMap = pushMap'}
-  where
-    runClient = retryingDelay timeoutDelay . flip runClientM clientEnv
+  -- recurse after applying the changes to the environment
+  http (f e)
 
 -- | The base URL to which we send Pushbullet API calls.
 baseurl :: BaseUrl
@@ -199,6 +266,8 @@ baseurl = BaseUrl
 main :: IO ()
 main = do
   auth <- pushbulletAuth . PushbulletKey . T.pack <$> getEnv "PUSHBULLET_KEY"
+  hlwords <- T.words . T.pack <$> getEnv "NIRC_HL_WORDS"
+
   let p = 8088
   manager <- newTlsManager
   c <- newChan
@@ -207,6 +276,8 @@ main = do
   let clientEnv = ClientEnv manager baseurl
   let pushMap = M.empty
   let recvEvent = readChan c
+  let hl = allBoolean $ hlBodySubstring <$> hlwords
+  let hlPush = Nothing
   let httpEnv = HttpEnv {..}
   httpThread <- async $ do
     putStrLn $ "HTTP client thread started."

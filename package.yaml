@@ -33,6 +33,7 @@ default-extensions:
   - DeriveAnyClass
   - DerivingStrategies
   - DeriveGeneric
+  - ViewPatterns
 
 executables:
   nirc-exe:
