@@ -4,7 +4,6 @@ import Control.Concurrent ( threadDelay )
 import Control.Concurrent.Async
 import Control.Concurrent.Chan
 import Control.Monad.IO.Class ( liftIO )
-import Data.Coerce ( coerce )
 import Data.Text ( Text )
 import qualified Data.List.NonEmpty as N
 import Data.List.NonEmpty ((<|),  NonEmpty )
