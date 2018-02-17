@@ -275,7 +275,7 @@ main = do
   let clientEnv = ClientEnv manager baseurl
   let pushMap = M.empty
   let recvEvent = readChan c
-  let hl = allBoolean $ hlBodySubstring <$> hlwords
+  let hl = anyBoolean $ hlBodySubstring <$> hlwords
   let hlPush = Nothing
   let httpEnv = HttpEnv {..}
   httpThread <- async $ do
